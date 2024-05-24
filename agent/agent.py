@@ -33,6 +33,9 @@ class Agent:
         self.GAMMA = 0.99  # GAMMA is the discount factor
         self.BATCH_SIZE = 128  # BATCH_SIZE is the number of transitions sampled from the replay buffer
 
+        self.build_memory(self.snake_game)
+        # print(len(self.replay_memory))
+
     def choose_action(self, state):
         return self.policy.choose_action(state, self.policy_net, self.device)
 
@@ -41,6 +44,7 @@ class Agent:
             # Create a named window for the display
             cv2.namedWindow("Snake Game Training", cv2.WINDOW_NORMAL)
 
+        scores = 0
         for i_episode in range(num_episodes):
             # Initialize the environment and get its state
             pre_state, _, _, info = self.snake_game.reset()
@@ -93,7 +97,9 @@ class Agent:
 
                 if terminated:
                     break
-            print(total_score)
+            scores += total_score
+            if i_episode % 50 == 0:
+                print(f"Episode {i_episode} - Avg Score: {scores / 50}")
             """if done:
                 episode_durations.append(t + 1)
                 plot_durations()
@@ -155,3 +161,74 @@ class Agent:
         # In-place gradient clipping
         torch.nn.utils.clip_grad_value_(self.policy_net.parameters(), 100)
         self.optimizer.step()
+
+    def min_distance_heuristic(self, game: SnakeGame) -> int:
+        score, apple, head, tail, direction = game.get_state()
+        head_x, head_y = head
+        apple_x, apple_y = apple[0]
+        optimal_direction = 0
+        # check what is the "optimal" direction to go to the apple
+        if apple_x > head_x:
+            optimal_direction = 1
+        elif apple_x < head_x:
+            optimal_direction = 3
+        elif apple_y > head_y:
+            optimal_direction = 2
+        else:  # apple_y < head_y
+            optimal_direction = 0
+        # check which way to turn
+        if direction == 0:  # up
+            if optimal_direction == 1:  # right
+                return 2
+            elif optimal_direction == 3:  # left
+                return 0
+        elif direction == 1:  # right
+            if optimal_direction == 0:  # up
+                return 0
+            elif optimal_direction == 2:  # down
+                return 2
+        elif direction == 2:  # down
+            if optimal_direction == 1:  # right
+                return 0
+            elif optimal_direction == 3:  # left
+                return 2
+        else:  # direction == 3, left
+            if optimal_direction == 0:  # up
+                return 2
+            elif optimal_direction == 2:  # down
+                return 0
+        return 1
+
+    def build_memory(self, game: SnakeGame):
+        print("Building Memory...")
+        game.reset()
+
+        for _ in range(self.replay_memory.memory.maxlen):
+            action = self.min_distance_heuristic(game)
+            pre_state, reward, done, _ = game.step(action - 1)
+            # turn everything into tensors
+            state = (
+                torch.tensor(pre_state, dtype=torch.float32, device=self.device)
+                .permute(2, 0, 1)
+                .unsqueeze(0)
+            )
+
+            reward = torch.tensor([reward], device=self.device, dtype=torch.long)
+            action = torch.tensor([[action]], device=self.device, dtype=torch.long)
+
+            next_state = None
+            if done:
+                next_state = None
+            else:
+                next_state = (
+                    torch.tensor(pre_state, dtype=torch.float32, device=self.device)
+                    .permute(2, 0, 1)
+                    .unsqueeze(0)
+                )
+
+            self.replay_memory.push(state, action, next_state, reward)
+            state = next_state
+
+            if done:
+                state, _, _, _ = game.reset()
+        print("Memory built!")

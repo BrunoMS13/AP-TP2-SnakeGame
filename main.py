@@ -15,34 +15,41 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(device)
 
 
-def train_agent(agent_id: int, show_video=False):
+def train_agent(
+    agent_id: int, show_video: bool = False, agent: Agent | None = None
+) -> Agent:
     print(f"Agent {agent_id}")
     snake_game = SnakeGame(14, 14, border=1, max_grass=0.05, grass_growth=0.001)
     snake_game.reset()
 
-    policy = EpsilonGreedyPolicy()
-    policy_net = DQN(INPUT_CHANNELS, NUM_ACTIONS).to(device)
-    target_net = DQN(INPUT_CHANNELS, NUM_ACTIONS).to(device)
-    optimizer = torch.optim.AdamW(policy_net.parameters(), lr=LR)
+    if agent is None:
+        policy = EpsilonGreedyPolicy()
+        policy_net = DQN(INPUT_CHANNELS, NUM_ACTIONS).to(device)
+        target_net = DQN(INPUT_CHANNELS, NUM_ACTIONS).to(device)
+        optimizer = torch.optim.AdamW(policy_net.parameters(), lr=LR)
 
-    agent = Agent(
-        policy=policy,
-        device=device,
-        optimizer=optimizer,
-        policy_net=policy_net,
-        snake_game=snake_game,
-        target_net=target_net,
-    )
-    agent.train(num_episodes=1000, show_video=show_video)
+        agent = Agent(
+            policy=policy,
+            device=device,
+            optimizer=optimizer,
+            policy_net=policy_net,
+            snake_game=snake_game,
+            target_net=target_net,
+        )
+    agent.snake_game = snake_game
+    agent.train(num_episodes=101, show_video=show_video)
     return agent
 
 
 def main():
+    agent_manager = AgentManager()
+
+    # agent = train_agent(0, show_video=False)
+    # agent = agent_manager.load(agent_id=f"DQN_{0}")
     agent = train_agent(0, show_video=True)
 
     """ Example of saving and loading an agent """
-    agent_manager = AgentManager()
-    agent_manager.save(agent, agent_id=f"DQN_{0}")
+    agent_manager.save(agent, agent_id=f"DQN_{1}")
     # old_agent = agent_manager.load(agent_id=f"DQN_{0}")
     # old_agent.train(num_episodes=50)
 
