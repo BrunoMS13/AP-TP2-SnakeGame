@@ -100,6 +100,7 @@ class Agent:
             scores += total_score
             if i_episode % 50 == 0:
                 print(f"Episode {i_episode} - Avg Score: {scores / 50}")
+                scores = 0
             """if done:
                 episode_durations.append(t + 1)
                 plot_durations()

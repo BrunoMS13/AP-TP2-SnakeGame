@@ -37,7 +37,7 @@ def train_agent(
             target_net=target_net,
         )
     agent.snake_game = snake_game
-    agent.train(num_episodes=101, show_video=show_video)
+    agent.train(num_episodes=500, show_video=show_video)
     return agent
 
 
@@ -46,7 +46,7 @@ def main():
 
     # agent = train_agent(0, show_video=False)
     # agent = agent_manager.load(agent_id=f"DQN_{0}")
-    agent = train_agent(0, show_video=True)
+    agent = train_agent(0, show_video=False)
 
     """ Example of saving and loading an agent """
     agent_manager.save(agent, agent_id=f"DQN_{1}")
