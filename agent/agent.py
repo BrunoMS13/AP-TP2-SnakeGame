@@ -6,6 +6,7 @@ import torch.nn as nn
 from agent.policies import Policy
 from game.snake_game import SnakeGame
 from agent.replay_memory import ReplayMemory, Transition
+from agent.heuristics import min_distance_heuristic
 
 
 class Agent:
@@ -16,7 +17,6 @@ class Agent:
         policy_net,
         policy: Policy,
         snake_game: SnakeGame,
-        replay_memory=ReplayMemory(10000),
         target_net=None,
     ):
         self.policy = policy
@@ -25,7 +25,10 @@ class Agent:
         self.policy_net = policy_net
         self.snake_game = snake_game
         self.target_net = target_net
-        self.replay_memory = replay_memory
+        self.replay_memory = ReplayMemory(10000, device)
+
+        self.replay_memory.build_memory(snake_game, min_distance_heuristic)
+
 
         self.TAU = 0.005  # TAU is the update rate of the target network
         self.GAMMA = 0.99  # GAMMA is the discount factor
@@ -120,8 +123,10 @@ class Agent:
         # Compute Q(s_t, a) - the model computes Q(s_t), then we select the
         # columns of actions taken. These are the actions which would've been taken
         # for each batch state according to policy_net
-        state_action_values = self.policy_net(state_batch).gather(1, action_batch)
-
+        q_values = self.policy_net(state_batch)
+        action_batch = action_batch.unsqueeze(1)
+        state_action_values = q_values.gather(1, action_batch)
+        
         # Compute V(s_{t+1}) for all next states.
         # Expected values of actions for non_final_next_states are computed based
         # on the "older" target_net; selecting their best reward with max(1).values

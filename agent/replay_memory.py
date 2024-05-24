@@ -1,12 +1,17 @@
 import random
 from collections import namedtuple, deque
+from typing import Callable
+
+import torch
+from game.snake_game import SnakeGame
 
 Transition = namedtuple("Transition", ("state", "action", "next_state", "reward"))
 
 
 class ReplayMemory(object):
 
-    def __init__(self, capacity):
+    def __init__(self, capacity, device):
+        self.device = device
         self.memory = deque([], maxlen=capacity)
 
     def push(self, *args):
@@ -18,3 +23,20 @@ class ReplayMemory(object):
 
     def __len__(self):
         return len(self.memory)
+
+    def build_memory(self, game: SnakeGame, heuristic_function: Callable[[SnakeGame], int]):
+        print("Building Memory...")
+        state, reward, done, _ = game.reset()
+        for _ in range(self.memory.maxlen):
+            action = heuristic_function(game) - 1
+            state_next, reward, done, _ = game.step(action)
+            # turn everything into tensors
+            state_next_tensor = torch.tensor(state_next, dtype=torch.float32, device=self.device).permute(2, 0, 1).unsqueeze(0)
+            action_tensor = torch.tensor([action], device=self.device)
+            state_tensor = torch.tensor(state, dtype=torch.float32, device=self.device).permute(2, 0, 1).unsqueeze(0)
+            reward = torch.tensor([reward], device=self.device)
+            self.push(state_tensor, action_tensor, state_next_tensor, reward)
+            state = state_next
+            if done:
+                state, reward, done, _ = game.reset()
+        print("Memory built!")

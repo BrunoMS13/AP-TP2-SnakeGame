@@ -56,7 +56,7 @@ target_net.load_state_dict(policy_net.state_dict())
 target_net.eval()
 
 optimizer = optim.AdamW(policy_net.parameters(), lr=1e-4)
-memory = ReplayMemory(10000)
+memory = ReplayMemory(10000, device)
 
 BATCH_SIZE = 128
 GAMMA = 0.99
