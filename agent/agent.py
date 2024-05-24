@@ -1,3 +1,5 @@
+from time import sleep
+import cv2
 from itertools import count
 
 import torch
@@ -37,20 +39,30 @@ class Agent:
     def choose_action(self, state):
         return self.policy.choose_action(state, self.policy_net, self.device)
 
-    def train(self, num_episodes=100):
+    def train(self, num_episodes=100, show_video=False):
+        if show_video:
+            # Create a named window for the display
+            cv2.namedWindow("Snake Game Training", cv2.WINDOW_NORMAL)
+
         for i_episode in range(num_episodes):
             # Initialize the environment and get its state
-            state, _, _, info = self.snake_game.reset()
+            pre_state, _, _, info = self.snake_game.reset()
+
             state = (
-                torch.tensor(state, dtype=torch.float32, device=self.device)
+                torch.tensor(pre_state, dtype=torch.float32, device=self.device)
                 .permute(2, 0, 1)
                 .unsqueeze(0)
             )
+
             total_score = 0
             for t in count():
+                if show_video:
+                    cv2.imshow("Snake Game Training", pre_state[:, :, :])
+                    cv2.waitKey(1) & 0xFF
+                    sleep(0.01)
                 action = self.choose_action(state)
                 # -1 to assert the action
-                observation, reward, terminated, info = self.snake_game.step(
+                pre_state, reward, terminated, info = self.snake_game.step(
                     action.item() - 1
                 )
                 reward = torch.tensor([reward], device=self.device)
@@ -60,9 +72,7 @@ class Agent:
                     next_state = None
                 else:
                     next_state = (
-                        torch.tensor(
-                            observation, dtype=torch.float32, device=self.device
-                        )
+                        torch.tensor(pre_state, dtype=torch.float32, device=self.device)
                         .permute(2, 0, 1)
                         .unsqueeze(0)
                     )
@@ -134,11 +144,9 @@ class Agent:
         # state value or 0 in case the state was final.
         next_state_values = torch.zeros(self.BATCH_SIZE, device=self.device)
         with torch.no_grad():
-            next_state_values[non_final_mask] = self.target_net(
-                non_final_next_states
-            ).max(1)[
-                0
-            ]  # TODO: check if this is correct it was max(1).values
+            next_state_values[non_final_mask] = (
+                self.target_net(non_final_next_states).max(1).values
+            )
         # Compute the expected Q values
         expected_state_action_values = (next_state_values * self.GAMMA) + reward_batch
 

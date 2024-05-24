@@ -12,9 +12,10 @@ NUM_ACTIONS = 3  # turn left, right or continue
 INPUT_CHANNELS = 3
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+print(device)
 
 
-def train_agent(agent_id: int):
+def train_agent(agent_id: int, show_video=False):
     print(f"Agent {agent_id}")
     snake_game = SnakeGame(14, 14, border=1, max_grass=0.05, grass_growth=0.001)
     snake_game.reset()
@@ -32,12 +33,12 @@ def train_agent(agent_id: int):
         snake_game=snake_game,
         target_net=target_net,
     )
-    agent.train(num_episodes=1000)
+    agent.train(num_episodes=1000, show_video=show_video)
     return agent
 
 
 def main():
-    agent = train_agent(0)
+    agent = train_agent(0, show_video=True)
 
     """ Example of saving and loading an agent """
     agent_manager = AgentManager()
