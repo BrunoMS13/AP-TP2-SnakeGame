@@ -17,28 +17,28 @@ def min_distance_heuristic(game: SnakeGame) -> int:
         optimal_direction = 3
     elif apple_y > head_y:
         optimal_direction = 2
-    else: # apple_y < head_y
+    else:  # apple_y < head_y
         optimal_direction = 0
     # check which way to turn
-    if direction == 0: # up
-        if optimal_direction == 1: # right
+    if direction == 0:  # up
+        if optimal_direction == 1:  # right
             return 2
-        elif optimal_direction == 3: # left
+        elif optimal_direction == 3:  # left
             return 0
-    elif direction == 1: # right
-        if optimal_direction == 0: # up
+    elif direction == 1:  # right
+        if optimal_direction == 0:  # up
             return 0
-        elif optimal_direction == 2: # down
+        elif optimal_direction == 2:  # down
             return 2
-    elif direction == 2: # down
-        if optimal_direction == 1: # right
+    elif direction == 2:  # down
+        if optimal_direction == 1:  # right
             return 0
-        elif optimal_direction == 3: # left
+        elif optimal_direction == 3:  # left
             return 2
-    else: # direction == 3, left
-        if optimal_direction == 0: # up
+    else:  # direction == 3, left
+        if optimal_direction == 0:  # up
             return 2
-        elif optimal_direction == 2: # down
+        elif optimal_direction == 2:  # down
             return 0
     return 1
 
@@ -69,22 +69,22 @@ def do_not_hit_yourself_heuristic(game: SnakeGame) -> int:
     
     if direction == 0: # up
         if go_right:
-            return 1
+            return 2
         elif go_left:
-            return -1
+            return 0
     elif direction == 1: # right
         if go_up:
-            return -1
+            return 0
         elif go_down:
-            return 1
+            return 2
     elif direction == 2: # down
         if go_right:
-            return -1
+            return 0
         elif go_left:
-            return 1
+            return 2
     else: # direction == 3, left
         if go_up:
-            return 1
+            return 2
         elif go_down:
-            return -1
-    return 0
+            return 0
+    return 1

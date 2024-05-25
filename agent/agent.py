@@ -1,15 +1,15 @@
 from time import sleep
+import time
 import cv2
 from itertools import count
 
 import torch
 import torch.nn as nn
-
+import matplotlib.pyplot as plt
 from agent.policies import Policy
-from game.snake_game import SnakeGame
+from game.snake_game_wrapper import SnakeGameWrapper
 from agent.replay_memory import ReplayMemory, Transition
-from agent.heuristics import min_distance_heuristic
-
+from agent.heuristics import min_distance_heuristic, do_not_hit_yourself_heuristic
 
 class Agent:
     def __init__(
@@ -18,19 +18,18 @@ class Agent:
         optimizer,
         policy_net,
         policy: Policy,
-        snake_game: SnakeGame,
+        game_wrapper: SnakeGameWrapper,
         target_net=None,
     ):
         self.policy = policy
         self.device = device
         self.optimizer = optimizer
         self.policy_net = policy_net
-        self.snake_game = snake_game
+        self.game_wrapper = game_wrapper
         self.target_net = target_net
         self.replay_memory = ReplayMemory(10000, device)
 
-        self.replay_memory.build_memory(snake_game, min_distance_heuristic)
-
+        self.replay_memory.build_memory(game_wrapper, min_distance_heuristic)
 
         self.TAU = 0.005  # TAU is the update rate of the target network
         self.GAMMA = 0.99  # GAMMA is the discount factor
@@ -44,15 +43,13 @@ class Agent:
             # Create a named window for the display
             cv2.namedWindow("Snake Game Training", cv2.WINDOW_NORMAL)
 
+        scores = 0
+
         for i_episode in range(num_episodes):
             # Initialize the environment and get its state
-            pre_state, _, _, info = self.snake_game.reset()
+            pre_state, _, _, info = self.game_wrapper.reset()
 
-            state = (
-                torch.tensor(pre_state, dtype=torch.float32, device=self.device)
-                .permute(2, 0, 1)
-                .unsqueeze(0)
-            )
+            state = torch.tensor(pre_state, dtype=torch.float32, device=self.device)
 
             total_score = 0
             for t in count():
@@ -62,20 +59,15 @@ class Agent:
                     sleep(0.01)
                 action = self.choose_action(state)
                 # -1 to assert the action
-                pre_state, reward, terminated, info = self.snake_game.step(
+                pre_state, reward, terminated, info = self.game_wrapper.step(
                     action.item() - 1
                 )
                 reward = torch.tensor([reward], device=self.device)
                 total_score = info["score"]
-
                 if terminated:
                     next_state = None
                 else:
-                    next_state = (
-                        torch.tensor(pre_state, dtype=torch.float32, device=self.device)
-                        .permute(2, 0, 1)
-                        .unsqueeze(0)
-                    )
+                    next_state = torch.tensor(pre_state, dtype=torch.float32, device=self.device)
 
                 # Store the transition in memory
                 self.replay_memory.push(state, action, next_state, reward)
@@ -96,16 +88,12 @@ class Agent:
 
                 if terminated:
                     break
-            print(total_score)
-            """if done:
-                episode_durations.append(t + 1)
-                plot_durations()
-                break"""
+            scores += total_score
+            if (i_episode+1) % 50 == 0:
+                print(f"Episode {i_episode+1} - Avg Score: {scores / 50}")
+                scores = 0
 
-        """print('Complete')
-        plot_durations(show_result=True)
-        plt.ioff()
-        plt.show()"""
+        
 
     def optimize_model(self):
         if len(self.replay_memory) < self.BATCH_SIZE:
@@ -123,9 +111,16 @@ class Agent:
             device=self.device,
             dtype=torch.bool,
         )
-        non_final_next_states = torch.cat(
-            [s for s in batch.next_state if s is not None]
-        )
+        # Pad tensors with extra dimensions, every state should have the same shape, which is [batch_size, width, height, channels, num_frames]
+        padded_next_states = []
+        for next_state in batch.next_state:
+            if next_state is not None:
+                padded_next_states.append(next_state)
+            else:
+                padded_next_states.append(torch.zeros_like(batch.state[0]))
+        # Concatenate padded tensors
+        non_final_next_states = torch.cat(padded_next_states, dim=0)
+
         state_batch = torch.cat(batch.state)
         action_batch = torch.cat(batch.action)
         reward_batch = torch.cat(batch.reward)
@@ -133,9 +128,7 @@ class Agent:
         # Compute Q(s_t, a) - the model computes Q(s_t), then we select the
         # columns of actions taken. These are the actions which would've been taken
         # for each batch state according to policy_net
-        q_values = self.policy_net(state_batch)
-        action_batch = action_batch.unsqueeze(1)
-        state_action_values = q_values.gather(1, action_batch)
+        state_action_values = self.policy_net(state_batch).gather(1, action_batch)
         
         # Compute V(s_{t+1}) for all next states.
         # Expected values of actions for non_final_next_states are computed based
