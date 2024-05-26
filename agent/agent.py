@@ -6,8 +6,18 @@ import torch
 import torch.nn as nn
 
 from agent.policies import Policy
-from game.snake_game import SnakeGame
+from game.game_wrapper import SnakeGameWrapper
 from agent.replay_memory import ReplayMemory, Transition
+
+
+UP = 0
+RIGHT = 1
+DOWN = 2
+LEFT = 3
+
+TURN_LEFT = 0
+GO_STRAIGHT = 1
+TURN_RIGHT = 2
 
 
 class Agent:
@@ -17,8 +27,8 @@ class Agent:
         optimizer,
         policy_net,
         policy: Policy,
-        snake_game: SnakeGame,
-        replay_memory=ReplayMemory(10000),
+        snake_game: SnakeGameWrapper,
+        replay_memory=ReplayMemory(1000),
         target_net=None,
     ):
         self.policy = policy
@@ -48,19 +58,22 @@ class Agent:
         for i_episode in range(num_episodes):
             # Initialize the environment and get its state
             pre_state, _, _, info = self.snake_game.reset()
-
+            # print(pre_state.shape)
             state = (
                 torch.tensor(pre_state, dtype=torch.float32, device=self.device)
-                .permute(2, 0, 1)
-                .unsqueeze(0)
+                .permute(2, 3, 0, 1)  # Change the order to (3, 3, 16, 16)
+                .reshape(-1, 16, 16)  # Reshape to (9, 16, 16)
+                .unsqueeze(0)  # Add batch dimension, resulting in (1, 9, 16, 16)
             )
+            # state = self.__reshape_state(state)
 
             total_score = 0
             for t in count():
                 if show_video:
-                    cv2.imshow("Snake Game Training", pre_state[:, :, :])
+                    cv2.imshow("Snake Game Training", pre_state[:, :, :, 0])
                     cv2.waitKey(1) & 0xFF
                     sleep(0.01)
+                # print(f"here{state.shape}")
                 action = self.choose_action(state)
                 # -1 to assert the action
                 pre_state, reward, terminated, info = self.snake_game.step(
@@ -74,9 +87,11 @@ class Agent:
                 else:
                     next_state = (
                         torch.tensor(pre_state, dtype=torch.float32, device=self.device)
-                        .permute(2, 0, 1)
+                        .permute(2, 3, 0, 1)  # Change the order to (3, 3, 16, 16)
+                        .reshape(-1, 16, 16)  # Reshape to (9, 16, 16)
                         .unsqueeze(0)
                     )
+                    # next_state = self.__reshape_state(next_state)
 
                 # Store the transition in memory
                 self.replay_memory.push(state, action, next_state, reward)
@@ -115,22 +130,25 @@ class Agent:
         if len(self.replay_memory) < self.BATCH_SIZE:
             return
         transitions = self.replay_memory.sample(self.BATCH_SIZE)
-        # Transpose the batch (see https://stackoverflow.com/a/19343/3343043 for
-        # detailed explanation). This converts batch-array of Transitions
+        # Transpose the batch. This converts batch-array of Transitions
         # to Transition of batch-arrays.
         batch = Transition(*zip(*transitions))
 
         # Compute a mask of non-final states and concatenate the batch elements
-        # (a final state would've been the one after which simulation ended)
         non_final_mask = torch.tensor(
             tuple(map(lambda s: s is not None, batch.next_state)),
             device=self.device,
             dtype=torch.bool,
         )
+        # print([s.shape for s in batch.next_state if s is not None])
         non_final_next_states = torch.cat(
             [s for s in batch.next_state if s is not None]
         )
+
         state_batch = torch.cat(batch.state)
+
+        # print(state_batch.shape, non_final_next_states.shape)
+
         action_batch = torch.cat(batch.action)
         reward_batch = torch.cat(batch.reward)
 
@@ -163,73 +181,109 @@ class Agent:
         torch.nn.utils.clip_grad_value_(self.policy_net.parameters(), 100)
         self.optimizer.step()
 
-    def min_distance_heuristic(self, game: SnakeGame) -> int:
-        score, apple, head, tail, direction = game.get_state()
+    # x grows from left to right, starting at 0
+    # y grows from top to bottom, starting at 0
+    def min_distance_heuristic(self, game: SnakeGameWrapper) -> int:
+        score, apple, head, tail, direction = game.game.get_state()
+        """
+        Decide whether to turn left (0), go straight (1), or turn right (2)
+        based on the snake's current heading and the position of the apple.
+        
+        Parameters:
+            apple (tuple): Position of the apple (y, x).
+            head (tuple): Position of the snake's head (y, x).
+            direction (int): Current direction of the snake (0: North, 1: East, 2: South, 3: West).
+            
+        Returns:
+            int: Decision to turn left (0), go straight (1), or turn right (2).
+        """
         head_x, head_y = head
-        apple_x, apple_y = apple[0]
-        optimal_direction = 0
-        # check what is the "optimal" direction to go to the apple
-        if apple_x > head_x:
-            optimal_direction = 1
-        elif apple_x < head_x:
-            optimal_direction = 3
-        elif apple_y > head_y:
-            optimal_direction = 2
-        else:  # apple_y < head_y
-            optimal_direction = 0
-        # check which way to turn
-        if direction == 0:  # up
-            if optimal_direction == 1:  # right
-                return 2
-            elif optimal_direction == 3:  # left
-                return 0
-        elif direction == 1:  # right
-            if optimal_direction == 0:  # up
-                return 0
-            elif optimal_direction == 2:  # down
-                return 2
-        elif direction == 2:  # down
-            if optimal_direction == 1:  # right
-                return 0
-            elif optimal_direction == 3:  # left
-                return 2
-        else:  # direction == 3, left
-            if optimal_direction == 0:  # up
-                return 2
-            elif optimal_direction == 2:  # down
-                return 0
-        return 1
+        apple_y, apple_x = apple[0]
 
-    def build_memory(self, game: SnakeGame):
+        # Calculate the difference in positions
+        delta_y = apple_y - head_y
+        delta_x = apple_x - head_x
+
+        if direction == 0:  # Facing North
+            if delta_y > 0:
+                return 2  # Turn right to go East
+            elif delta_y < 0:
+                return 0  # Turn left to go West
+            else:
+                return 1  # Continue straight North if directly aligned
+
+        elif direction == 1:  # Facing East
+            if delta_x > 0:
+                return 2  # Turn right to go South
+            elif delta_x < 0:
+                return 0  # Turn left to go North
+            else:
+                return 1  # Continue straight East if directly aligned
+
+        elif direction == 2:  # Facing South
+            if delta_y < 0:
+                return 2  # Turn right to go West
+            elif delta_y > 0:
+                return 0  # Turn left to go East
+            else:
+                return 1  # Continue straight South if directly aligned
+
+        elif direction == 3:  # Facing West
+            if delta_x < 0:
+                return 2  # Turn right to go North
+            elif delta_x > 0:
+                return 0  # Turn left to go South
+            else:
+                return 1  # Continue straight West if directly aligned
+
+        return 1  # Default to going straight if conditions are unclear
+
+    def build_memory(self, game: SnakeGameWrapper):
         print("Building Memory...")
-        game.reset()
+        top_score = 0
 
-        for _ in range(self.replay_memory.memory.maxlen):
-            action = self.min_distance_heuristic(game)
-            pre_state, reward, done, _ = game.step(action - 1)
-            # turn everything into tensors
+        # Debug Heuristic
+        cv2.namedWindow("Snake Game Memory Building", cv2.WINDOW_NORMAL)
+
+        while len(self.replay_memory) < self.replay_memory.memory.maxlen:
+            # score = 0
+            pre_state, _, _, _ = game.reset()
             state = (
                 torch.tensor(pre_state, dtype=torch.float32, device=self.device)
-                .permute(2, 0, 1)
+                .permute(2, 3, 0, 1)
+                .reshape(-1, 16, 16)
                 .unsqueeze(0)
             )
+            score, apple, head, tail, direction = game.game.get_state()
+            print(apple[0], head, direction)
+            for j in count():
+                w, h, c, frames = pre_state.shape
+                # Debug Heuristic
+                for frame in range(frames):
+                    cv2.imshow("Snake Game Memory Building", pre_state[:, :, :, frame])
+                    cv2.waitKey(1) & 0xFF
+                    sleep(0.2)
+                action = self.min_distance_heuristic(game)
+                pre_state, reward, done, info = game.step(action - 1)
+                """score = info["score"]
+                if info["score"] > top_score:
+                    top_score = info["score"]"""
+                reward = torch.tensor([reward], device=self.device, dtype=torch.long)
+                action = torch.tensor([[action]], device=self.device, dtype=torch.long)
+                if done:
+                    next_state = None
+                else:
+                    next_state = (
+                        torch.tensor(pre_state, dtype=torch.float32, device=self.device)
+                        .permute(2, 3, 0, 1)
+                        .reshape(-1, 16, 16)
+                        .unsqueeze(0)
+                    )
+                self.replay_memory.push(state, action, next_state, reward)
+                state = next_state
+                if done:
+                    break
+            # print(f"Score: {score}")
+            # print(f"All time high: {top_score}")
 
-            reward = torch.tensor([reward], device=self.device, dtype=torch.long)
-            action = torch.tensor([[action]], device=self.device, dtype=torch.long)
-
-            next_state = None
-            if done:
-                next_state = None
-            else:
-                next_state = (
-                    torch.tensor(pre_state, dtype=torch.float32, device=self.device)
-                    .permute(2, 0, 1)
-                    .unsqueeze(0)
-                )
-
-            self.replay_memory.push(state, action, next_state, reward)
-            state = next_state
-
-            if done:
-                state, _, _, _ = game.reset()
         print("Memory built!")
