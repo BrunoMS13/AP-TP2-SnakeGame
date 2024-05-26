@@ -6,18 +6,9 @@ import torch
 import torch.nn as nn
 
 from agent.policies import Policy
+from agent.heuristics import Heuristic
 from game.game_wrapper import SnakeGameWrapper
 from agent.replay_memory import ReplayMemory, Transition
-
-
-UP = 0
-RIGHT = 1
-DOWN = 2
-LEFT = 3
-
-TURN_LEFT = 0
-GO_STRAIGHT = 1
-TURN_RIGHT = 2
 
 
 class Agent:
@@ -27,6 +18,7 @@ class Agent:
         optimizer,
         policy_net,
         policy: Policy,
+        heuristic: Heuristic,
         snake_game: SnakeGameWrapper,
         replay_memory=ReplayMemory(1000),
         target_net=None,
@@ -34,6 +26,7 @@ class Agent:
         self.policy = policy
         self.device = device
         self.optimizer = optimizer
+        self.heuristic = heuristic
         self.policy_net = policy_net
         self.snake_game = snake_game
         self.target_net = target_net
@@ -181,69 +174,11 @@ class Agent:
         torch.nn.utils.clip_grad_value_(self.policy_net.parameters(), 100)
         self.optimizer.step()
 
-    # x grows from left to right, starting at 0
-    # y grows from top to bottom, starting at 0
-    def min_distance_heuristic(self, game: SnakeGameWrapper) -> int:
-        score, apple, head, tail, direction = game.game.get_state()
-        """
-        Decide whether to turn left (0), go straight (1), or turn right (2)
-        based on the snake's current heading and the position of the apple.
-        
-        Parameters:
-            apple (tuple): Position of the apple (y, x).
-            head (tuple): Position of the snake's head (y, x).
-            direction (int): Current direction of the snake (0: North, 1: East, 2: South, 3: West).
-            
-        Returns:
-            int: Decision to turn left (0), go straight (1), or turn right (2).
-        """
-        head_x, head_y = head
-        apple_y, apple_x = apple[0]
-
-        # Calculate the difference in positions
-        delta_y = apple_y - head_y
-        delta_x = apple_x - head_x
-
-        if direction == 0:  # Facing North
-            if delta_y > 0:
-                return 2  # Turn right to go East
-            elif delta_y < 0:
-                return 0  # Turn left to go West
-            else:
-                return 1  # Continue straight North if directly aligned
-
-        elif direction == 1:  # Facing East
-            if delta_x > 0:
-                return 2  # Turn right to go South
-            elif delta_x < 0:
-                return 0  # Turn left to go North
-            else:
-                return 1  # Continue straight East if directly aligned
-
-        elif direction == 2:  # Facing South
-            if delta_y < 0:
-                return 2  # Turn right to go West
-            elif delta_y > 0:
-                return 0  # Turn left to go East
-            else:
-                return 1  # Continue straight South if directly aligned
-
-        elif direction == 3:  # Facing West
-            if delta_x < 0:
-                return 2  # Turn right to go North
-            elif delta_x > 0:
-                return 0  # Turn left to go South
-            else:
-                return 1  # Continue straight West if directly aligned
-
-        return 1  # Default to going straight if conditions are unclear
-
     def build_memory(self, game: SnakeGameWrapper):
         print("Building Memory...")
-        top_score = 0
 
         # Debug Heuristic
-        cv2.namedWindow("Snake Game Memory Building", cv2.WINDOW_NORMAL)
+        # cv2.namedWindow("Snake Game Memory Building", cv2.WINDOW_NORMAL)
 
         while len(self.replay_memory) < self.replay_memory.memory.maxlen:
             # score = 0
@@ -254,16 +189,12 @@ class Agent:
                 .reshape(-1, 16, 16)
                 .unsqueeze(0)
             )
-            score, apple, head, tail, direction = game.game.get_state()
-            print(apple[0], head, direction)
             for j in count():
-                w, h, c, frames = pre_state.shape
                 # Debug Heuristic
-                for frame in range(frames):
-                    cv2.imshow("Snake Game Memory Building", pre_state[:, :, :, frame])
-                    cv2.waitKey(1) & 0xFF
-                    sleep(0.2)
-                action = self.min_distance_heuristic(game)
+                """cv2.imshow("Snake Game Memory Building", pre_state[:, :, :, -1])
+                cv2.waitKey(1) & 0xFF
+                sleep(0.2)"""
+                action = self.heuristic.get_action(game)
                 pre_state, reward, done, info = game.step(action - 1)
                 """score = info["score"]
                 if info["score"] > top_score:

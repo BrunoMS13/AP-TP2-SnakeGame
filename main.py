@@ -5,6 +5,7 @@ from agent.agent import Agent
 from game.snake_game import SnakeGame
 from agent.agent_manager import AgentManager
 from game.game_wrapper import SnakeGameWrapper
+from agent.heuristics import MinDistanceHeuristic
 from agent.policies import EpsilonGreedyPolicy, BoltzmannPolicy
 
 
@@ -26,6 +27,7 @@ def train_agent(
 
     if agent is None:
         policy = EpsilonGreedyPolicy()
+        heuristic = MinDistanceHeuristic()
         policy_net = DQN(INPUT_CHANNELS, NUM_ACTIONS).to(device)
         target_net = DQN(INPUT_CHANNELS, NUM_ACTIONS).to(device)
         optimizer = torch.optim.AdamW(policy_net.parameters(), lr=LR)
@@ -34,6 +36,7 @@ def train_agent(
             policy=policy,
             device=device,
             optimizer=optimizer,
+            heuristic=heuristic,
             policy_net=policy_net,
             snake_game=snake_game,
             target_net=target_net,
