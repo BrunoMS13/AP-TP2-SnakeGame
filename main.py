@@ -1,7 +1,10 @@
+import cv2
 import torch
+from time import sleep
+from itertools import count
 
-from agent.dqn import DQN
 from agent.agent import Agent
+from agent.dqn import DQN, ReducedDQN
 from game.snake_game import SnakeGame
 from agent.agent_manager import AgentManager
 from game.game_wrapper import SnakeGameWrapper
@@ -28,8 +31,8 @@ def train_agent(
     if agent is None:
         policy = EpsilonGreedyPolicy()
         heuristic = MinDistanceHeuristic()
-        policy_net = DQN(INPUT_CHANNELS, NUM_ACTIONS).to(device)
-        target_net = DQN(INPUT_CHANNELS, NUM_ACTIONS).to(device)
+        policy_net = ReducedDQN(INPUT_CHANNELS, NUM_ACTIONS).to(device)
+        target_net = ReducedDQN(INPUT_CHANNELS, NUM_ACTIONS).to(device)
         optimizer = torch.optim.AdamW(policy_net.parameters(), lr=LR)
 
         agent = Agent(
@@ -42,23 +45,48 @@ def train_agent(
             target_net=target_net,
         )
     agent.snake_game = snake_game
-    agent.train(num_episodes=50, show_video=show_video)
+    agent.train(num_episodes=1000, show_video=show_video)
     return agent
+
+
+def test_agent(agent: Agent, episodes=10, show_video=True):
+    scores = []
+    if show_video:
+        cv2.namedWindow("Snake Game", cv2.WINDOW_NORMAL)
+    max_score = 0
+    for _ in range(episodes):
+        pre_state, reward, done, _ = agent.snake_game.reset()
+        for _ in count():
+            if show_video:
+                cv2.imshow("Snake Game", pre_state[:, :, :, -1])
+                cv2.waitKey(1) & 0xFF
+                sleep(0.01)
+            state = (
+                torch.tensor(pre_state, dtype=torch.float32, device=device)
+                .permute(2, 3, 0, 1)
+                .reshape(-1, 16, 16)
+                .unsqueeze(0)
+            )
+            action = agent.choose_action(state)
+            # -1 to assert the action
+            pre_state, reward, terminated, info = agent.snake_game.step(
+                action.item() - 1
+            )
+            if terminated:
+                scores.append(info["score"])
+                if info["score"] > max_score:
+                    max_score = info["score"]
+                break
+    print(f"Avg score: {sum(scores) / episodes}")
+    print(f"Highest score: {max_score}")
 
 
 def main():
     agent_manager = AgentManager()
-    agent_id = f"DQN_{3}_StackedFrames_EpsilonGreedy"
-
-    agent = train_agent(0, show_video=True)
-    # agent = agent_manager.load(agent_id=agent_id)
-    iteration = 0
-    # while True:
-    print(f"iteration: {iteration}")
-    # agent = train_agent(2, show_video=False, agent=agent)
-
-    agent_manager.save(agent, agent_id=agent_id)
-    iteration += 1
+    agent_id = f"ReducedDQN_{0}_StackedFrames_EpsilonGreedy_2k_eps_lr_1e-4"
+    agent: Agent = agent_manager.load(agent_id=agent_id)
+    agent.snake_game.game = SnakeGame(14, 14, border=1)
+    test_agent(agent, episodes=100, show_video=False)
 
 
 if __name__ == "__main__":

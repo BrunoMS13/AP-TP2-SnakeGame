@@ -56,5 +56,5 @@ class MinDistanceHeuristic(Heuristic):
             elif dy < 0:
                 return GO_STRAIGHT  # apple is straight ahead
 
-        # If none of the above conditions are met, return GO_STRAIGHT as a fallback
+        # If none of the above conditions are met, return TURN_RIGHT as a fallback
         return TURN_RIGHT

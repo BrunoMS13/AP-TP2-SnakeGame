@@ -173,5 +173,5 @@ class SnakeGame:
 # just run this if this file is the main
 if __name__ == "__main__":
     game = SnakeGame(14, 14)
+    print(game.print_state())
     print(game.get_state())
-    print(game.board_state().shape)

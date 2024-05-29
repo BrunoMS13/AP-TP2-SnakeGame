@@ -22,11 +22,7 @@ class SnakeGameWrapper:
         self.frames.append(state)
         return self.get_state(), reward, done, info
 
-    def score(self):
-        return self.game.score
-
     def get_state(self):
-        assert len(self.frames) == self.num_frames
         return self.__preprocess_and_stack_frames(list(self.frames))
 
     def get_last_state(self):

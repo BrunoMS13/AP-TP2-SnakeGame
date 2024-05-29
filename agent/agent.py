@@ -20,7 +20,7 @@ class Agent:
         policy: Policy,
         heuristic: Heuristic,
         snake_game: SnakeGameWrapper,
-        replay_memory=ReplayMemory(1000),
+        replay_memory=ReplayMemory(10000),
         target_net=None,
     ):
         self.policy = policy
@@ -42,12 +42,12 @@ class Agent:
     def choose_action(self, state):
         return self.policy.choose_action(state, self.policy_net, self.device)
 
-    def train(self, num_episodes=100, show_video=False):
+    def train(self, num_episodes=100, show_video=False) -> int:
         if show_video:
             # Create a named window for the display
             cv2.namedWindow("Snake Game Training", cv2.WINDOW_NORMAL)
-
         scores = 0
+        highest_score = 0
         for i_episode in range(num_episodes):
             # Initialize the environment and get its state
             pre_state, _, _, info = self.snake_game.reset()
@@ -106,6 +106,9 @@ class Agent:
                 if terminated:
                     break
             scores += total_score
+            if total_score > highest_score:
+                highest_score = total_score
+            # print(total_score)
             if i_episode % 50 == 0:
                 print(f"Episode {i_episode} - Avg Score: {scores / 50}")
                 scores = 0
@@ -113,7 +116,7 @@ class Agent:
                 episode_durations.append(t + 1)
                 plot_durations()
                 break"""
-
+        return highest_score
         """print('Complete')
         plot_durations(show_result=True)
         plt.ioff()
