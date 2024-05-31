@@ -4,7 +4,7 @@ from time import sleep
 from itertools import count
 
 from agent.agent import Agent
-from agent.dqn import DQN, ReducedDQN
+from agent.dqn import DQN, ReducedDQN, BigDQN, DuelingDQN
 from game.snake_game import SnakeGame
 from agent.agent_manager import AgentManager
 from game.game_wrapper import SnakeGameWrapper
@@ -21,7 +21,7 @@ print(device)
 
 
 def train_agent(
-    agent_id: int, show_video: bool = False, agent: Agent | None = None
+    agent_id: int, show_video: bool = False, agent: Agent | None = None, num_episodes=1000
 ) -> Agent:
     print(f"Agent {agent_id}")
     game = SnakeGame(14, 14, border=1, max_grass=0.05, grass_growth=0.001)
@@ -29,7 +29,7 @@ def train_agent(
     snake_game.reset()
 
     if agent is None:
-        policy = EpsilonGreedyPolicy()
+        policy = BoltzmannPolicy()
         heuristic = MinDistanceHeuristic()
         policy_net = ReducedDQN(INPUT_CHANNELS, NUM_ACTIONS).to(device)
         target_net = ReducedDQN(INPUT_CHANNELS, NUM_ACTIONS).to(device)
@@ -45,7 +45,7 @@ def train_agent(
             target_net=target_net,
         )
     agent.snake_game = snake_game
-    agent.train(num_episodes=1000, show_video=show_video)
+    agent.train(num_episodes=num_episodes, show_video=show_video)
     return agent
 
 
@@ -64,7 +64,7 @@ def test_agent(agent: Agent, episodes=10, show_video=True):
             state = (
                 torch.tensor(pre_state, dtype=torch.float32, device=device)
                 .permute(2, 3, 0, 1)
-                .reshape(-1, 16, 16)
+                .reshape(-1, agent.snake_game.game.width+2*agent.snake_game.game.border, agent.snake_game.game.height+2*agent.snake_game.game.border)
                 .unsqueeze(0)
             )
             action = agent.choose_action(state)
@@ -83,10 +83,22 @@ def test_agent(agent: Agent, episodes=10, show_video=True):
 
 def main():
     agent_manager = AgentManager()
-    agent_id = f"ReducedDQN_{0}_StackedFrames_EpsilonGreedy_2k_eps_lr_1e-4"
-    agent: Agent = agent_manager.load(agent_id=agent_id)
-    agent.snake_game.game = SnakeGame(14, 14, border=1)
-    test_agent(agent, episodes=100, show_video=False)
+    agent_id = f"Test15"
+
+    agent = train_agent(agent_id=agent_id, show_video=False, num_episodes=1000)
+    # agent: Agent = agent_manager.load(agent_id=agent_id)
+    # while True:
+    #     agent = train_agent(agent_id=agent_id, show_video=False, agent=agent, num_episodes=100)
+    #     agent_manager.save(agent, agent_id=agent_id)
+    # train_agent(agent_id=agent_id, show_video=False, agent=agent, num_episodes=1000)
+    # agent_manager.save(agent, agent_id=agent_id)
+
+    agent.plot_scores()
+
+
+    # agent: Agent = agent_manager.load(agent_id=agent_id)
+    # agent.snake_game.game = SnakeGame(14, 14, border=1)
+    # test_agent(agent, episodes=100, show_video=False)
 
 
 if __name__ == "__main__":

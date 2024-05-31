@@ -5,6 +5,7 @@ from itertools import count
 import torch
 import torch.nn as nn
 
+import matplotlib.pyplot as plt
 from agent.policies import Policy
 from agent.heuristics import Heuristic
 from game.game_wrapper import SnakeGameWrapper
@@ -32,9 +33,11 @@ class Agent:
         self.target_net = target_net
         self.replay_memory = replay_memory
 
-        self.TAU = 0.005  # TAU is the update rate of the target network
+        self.TAU = 0.0025  # TAU is the update rate of the target network
         self.GAMMA = 0.99  # GAMMA is the discount factor
         self.BATCH_SIZE = 128  # BATCH_SIZE is the number of transitions sampled from the replay buffer
+        self.scores = []
+        self.episode_num = []
 
         self.build_memory(self.snake_game)
         # print(len(self.replay_memory))
@@ -43,6 +46,7 @@ class Agent:
         return self.policy.choose_action(state, self.policy_net, self.device)
 
     def train(self, num_episodes=100, show_video=False) -> int:
+
         if show_video:
             # Create a named window for the display
             cv2.namedWindow("Snake Game Training", cv2.WINDOW_NORMAL)
@@ -55,7 +59,7 @@ class Agent:
             state = (
                 torch.tensor(pre_state, dtype=torch.float32, device=self.device)
                 .permute(2, 3, 0, 1)  # Change the order to (3, 3, 16, 16)
-                .reshape(-1, 16, 16)  # Reshape to (9, 16, 16)
+                .reshape(-1, self.snake_game.game.height+2*self.snake_game.game.border, self.snake_game.game.width+2*self.snake_game.game.border)  # Reshape to (9, 16, 16)
                 .unsqueeze(0)  # Add batch dimension, resulting in (1, 9, 16, 16)
             )
             # state = self.__reshape_state(state)
@@ -81,7 +85,7 @@ class Agent:
                     next_state = (
                         torch.tensor(pre_state, dtype=torch.float32, device=self.device)
                         .permute(2, 3, 0, 1)  # Change the order to (3, 3, 16, 16)
-                        .reshape(-1, 16, 16)  # Reshape to (9, 16, 16)
+                        .reshape(-1, self.snake_game.game.height+2*self.snake_game.game.border, self.snake_game.game.width+2*self.snake_game.game.border)  # Reshape to (9, 16, 16)
                         .unsqueeze(0)
                     )
                     # next_state = self.__reshape_state(next_state)
@@ -95,22 +99,25 @@ class Agent:
 
                 # Soft update of the target network's weights
                 # θ′ ← τ θ + (1 −τ )θ′
-                target_net_state_dict = self.target_net.state_dict()
-                policy_net_state_dict = self.policy_net.state_dict()
-                for key in policy_net_state_dict:
-                    target_net_state_dict[key] = policy_net_state_dict[
-                        key
-                    ] * self.TAU + target_net_state_dict[key] * (1 - self.TAU)
-                self.target_net.load_state_dict(target_net_state_dict)
+                if self.target_net:
+                    target_net_state_dict = self.target_net.state_dict()
+                    policy_net_state_dict = self.policy_net.state_dict()
+                    for key in policy_net_state_dict:
+                        target_net_state_dict[key] = policy_net_state_dict[
+                            key
+                        ] * self.TAU + target_net_state_dict[key] * (1 - self.TAU)
+                    self.target_net.load_state_dict(target_net_state_dict)
 
                 if terminated:
                     break
+            self.scores.append(total_score)
+            self.episode_num.append(i_episode)
             scores += total_score
             if total_score > highest_score:
                 highest_score = total_score
             # print(total_score)
-            if i_episode % 50 == 0:
-                print(f"Episode {i_episode} - Avg Score: {scores / 50}")
+            if (i_episode+1) % 50 == 0:
+                print(f"Episode {i_episode+1} - Avg Score: {scores / 50}")
                 scores = 0
             """if done:
                 episode_durations.append(t + 1)
@@ -159,10 +166,16 @@ class Agent:
         # This is merged based on the mask, such that we'll have either the expected
         # state value or 0 in case the state was final.
         next_state_values = torch.zeros(self.BATCH_SIZE, device=self.device)
-        with torch.no_grad():
-            next_state_values[non_final_mask] = (
-                self.target_net(non_final_next_states).max(1).values
-            )
+        if self.target_net:
+            with torch.no_grad():
+                next_state_values[non_final_mask] = (
+                    self.target_net(non_final_next_states).max(1).values
+                )
+        else:
+            with torch.no_grad():
+                next_state_values[non_final_mask] = (
+                    self.policy_net(non_final_next_states).max(1).values
+                )
         # Compute the expected Q values
         expected_state_action_values = (next_state_values * self.GAMMA) + reward_batch
 
@@ -189,7 +202,7 @@ class Agent:
             state = (
                 torch.tensor(pre_state, dtype=torch.float32, device=self.device)
                 .permute(2, 3, 0, 1)
-                .reshape(-1, 16, 16)
+                .reshape(-1, game.game.height+2*game.game.border, game.game.width+2*game.game.border)
                 .unsqueeze(0)
             )
             for j in count():
@@ -210,7 +223,7 @@ class Agent:
                     next_state = (
                         torch.tensor(pre_state, dtype=torch.float32, device=self.device)
                         .permute(2, 3, 0, 1)
-                        .reshape(-1, 16, 16)
+                        .reshape(-1, game.game.height+2*game.game.border, game.game.width+2*game.game.border)
                         .unsqueeze(0)
                     )
                 self.replay_memory.push(state, action, next_state, reward)
@@ -221,3 +234,14 @@ class Agent:
             # print(f"All time high: {top_score}")
 
         print("Memory built!")
+
+
+    def plot_scores(self):
+        plt.figure(figsize=(10, 5))
+        plt.plot(self.episode_num, self.scores, linestyle='-')
+        plt.title('Score Evolution Across Episodes')
+        plt.xlabel('Episode')
+        plt.ylabel('Score')
+        plt.grid(True)
+        plt.savefig('score_evolution.png')  # Save the plot as an image
+        plt.show()
